@@ -33,6 +33,8 @@ final class RailwayWorld {
     private static final int SAVE_VERSION = 2;
     private static final int MAX_SAVED_ENTRIES = 100_000;
     private static final double MAX_TRAIL_LENGTH = 1200;
+    private static final int MAX_VISIBLE_CONTRACTS = 4;
+    private static final int CONTRACT_REPLENISH_THRESHOLD = 2;
 
     final List<Edge> tracks = new ArrayList<>();
     final List<Station> stations = new ArrayList<>();
@@ -483,7 +485,8 @@ final class RailwayWorld {
 
     private DemolitionResult demolishStation(Station station) {
         for (Contract contract : contracts) {
-            if (contract.state != ContractState.COMPLETE && contract.state != ContractState.EXPIRED
+                if ((contract.state == ContractState.ACCEPTED || contract.state == ContractState.LOADING
+                    || contract.state == ContractState.IN_TRANSIT)
                     && (contract.origin == station || contract.destination == station)) {
                 return DemolitionResult.STATION_IN_USE;
             }
@@ -495,6 +498,7 @@ final class RailwayWorld {
             }
         }
         stations.remove(station);
+        contracts.removeIf(contract -> contract.origin == station || contract.destination == station);
         cash += STATION_COST / 2;
         return DemolitionResult.STATION_REMOVED;
     }
@@ -562,10 +566,13 @@ final class RailwayWorld {
         if (stationAt(position) != null) {
             return null;
         }
+        ArrayList<Station> existingStations = new ArrayList<>(stations);
         cash -= STATION_COST;
         int id = nextStationId++;
         Station station = new Station(id, position, "Siding " + id, Goods.MAIL);
+        station.stock.put(Goods.MAIL, 8);
         stations.add(station);
+        generateStationContracts(station, existingStations);
         return station;
     }
 
@@ -731,6 +738,9 @@ final class RailwayWorld {
                     station.stock.merge(station.produces, 1, (stock, produced) -> Math.min(30, stock + produced));
                 }
             }
+            if (minutes % 60 == 0) {
+                replenishContracts();
+            }
             for (Contract contract : contracts) {
                 if (contract.state != ContractState.AVAILABLE && contract.state != ContractState.COMPLETE
                         && contract.state != ContractState.EXPIRED && minutesOnDay() > contract.deadlineMinute
@@ -863,7 +873,66 @@ final class RailwayWorld {
     }
 
     Contract contractAt(int index) {
-        return index >= 0 && index < contracts.size() ? contracts.get(index) : null;
+        List<Contract> visible = visibleContracts();
+        return index >= 0 && index < visible.size() ? visible.get(index) : null;
+    }
+
+    List<Contract> visibleContracts() {
+        ArrayList<Contract> visible = new ArrayList<>();
+        ArrayList<Contract> offers = new ArrayList<>();
+        for (Contract contract : contracts) {
+            if (contract.state == ContractState.ACCEPTED || contract.state == ContractState.LOADING
+                    || contract.state == ContractState.IN_TRANSIT) {
+                if (visible.size() < MAX_VISIBLE_CONTRACTS) {
+                    visible.add(contract);
+                }
+            } else if (contract.state == ContractState.AVAILABLE) {
+                offers.add(contract);
+            }
+        }
+        int offerSlots = MAX_VISIBLE_CONTRACTS - visible.size();
+        int firstOffer = Math.max(0, offers.size() - offerSlots);
+        for (int index = firstOffer; index < offers.size(); index++) {
+            visible.add(offers.get(index));
+        }
+        return visible;
+    }
+
+    private void generateStationContracts(Station newStation, List<Station> existingStations) {
+        Station partner = existingStations.stream()
+                .min((left, right) -> Double.compare(
+                        left.position.distance(newStation.position),
+                        right.position.distance(newStation.position)))
+                .orElse(null);
+        if (partner == null) {
+            return;
+        }
+        addGeneratedContract(newStation, partner, newStation.produces);
+        addGeneratedContract(partner, newStation, partner.produces);
+    }
+
+    private void replenishContracts() {
+        long available = contracts.stream()
+                .filter(contract -> contract.state == ContractState.AVAILABLE)
+                .count();
+        if (available >= CONTRACT_REPLENISH_THRESHOLD || stations.size() < 2) {
+            return;
+        }
+        int originIndex = Math.floorMod(contracts.size() + deliveries, stations.size());
+        Station origin = stations.get(originIndex);
+        Station destination = stations.get((originIndex + 1) % stations.size());
+        addGeneratedContract(origin, destination, origin.produces);
+    }
+
+    private void addGeneratedContract(Station origin, Station destination, Goods goods) {
+        int nextId = contracts.stream().mapToInt(contract -> contract.id).max().orElse(0) + 1;
+        int amount = 3 + nextId % 3;
+        int distanceBonus = (int) (origin.position.distance(destination.position) / 40);
+        int reward = amount * 45 + distanceBonus;
+        int deadline = (day - 1) * 24 * 60 + minutes + 12 * 60;
+        String name = goods.label + " run: " + origin.name + " to " + destination.name;
+        contracts.add(new Contract(nextId, name, origin, destination, goods,
+                amount, reward, deadline, false));
     }
 
     String nextStopName(Train train) {

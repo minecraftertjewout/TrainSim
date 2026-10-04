@@ -9,6 +9,7 @@ import java.awt.event.MouseEvent;
 import java.awt.event.MouseWheelEvent;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.prefs.Preferences;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -190,6 +191,37 @@ class AppTest {
         assertEquals(siding, station.position);
         assertTrue(world.buildTrack(siding, new RailwayWorld.Node(1990.5, 1300.25)));
         assertTrue(world.stations.contains(station));
+    }
+
+    @Test void addingStationGeneratesVisibleFreightContracts() {
+        RailwayWorld world = new RailwayWorld();
+        world.cash = 100_000;
+        RailwayWorld.Station station = world.buildStation(new RailwayWorld.Node(1800, 1500));
+
+        assertNotNull(station);
+        List<RailwayWorld.Contract> generated = world.contracts.stream()
+                .filter(contract -> contract.origin == station || contract.destination == station)
+                .toList();
+        assertEquals(2, generated.size());
+        assertTrue(generated.stream().allMatch(contract ->
+                contract.state == RailwayWorld.ContractState.AVAILABLE));
+        assertTrue(world.visibleContracts().containsAll(generated));
+        assertEquals(8, station.stockOf(RailwayWorld.Goods.MAIL));
+    }
+
+    @Test void freightBoardReplenishesWhenAvailableOffersRunLow() {
+        RailwayWorld world = new RailwayWorld();
+        for (RailwayWorld.Contract contract : world.contracts) {
+            contract.state = RailwayWorld.ContractState.COMPLETE;
+        }
+        world.minutes = 59;
+        world.clockTicks = 9;
+
+        world.tick();
+
+        assertEquals(1, world.contracts.stream()
+                .filter(contract -> contract.state == RailwayWorld.ContractState.AVAILABLE).count());
+        assertEquals(1, world.visibleContracts().size());
     }
 
         @Test void demolitionRefundsUnusedObjectsAndProtectsAssetsInUse() {

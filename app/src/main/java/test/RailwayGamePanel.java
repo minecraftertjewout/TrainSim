@@ -1413,10 +1413,11 @@ final class RailwayGamePanel extends JPanel {
         g.drawString("FREIGHT BOARD", BOARD_X, 113);
         g.setColor(MUTED);
         g.setFont(new Font("Dialog", Font.PLAIN, 9));
-        g.drawString("TAKE ORDERS. KEEP THE LINE MOVING.", BOARD_X, 129);
+        g.drawString("NEW STATIONS ADD FREIGHT ORDERS.", BOARD_X, 129);
 
-        for (int index = 0; index < world.contracts.size(); index++) {
-            RailwayWorld.Contract contract = world.contracts.get(index);
+        List<RailwayWorld.Contract> boardContracts = world.visibleContracts();
+        for (int index = 0; index < boardContracts.size(); index++) {
+            RailwayWorld.Contract contract = boardContracts.get(index);
             int y = 146 + index * 132;
             boolean selected = contract == selectedContract;
             g.setColor(selected ? new Color(250, 253, 255) : new Color(245, 245, 234));
@@ -1724,7 +1725,7 @@ final class RailwayGamePanel extends JPanel {
             + "Five stops are visible at a time; scroll over the list or drag its scrollbar to see the rest. Use the row arrows to reorder stops and x to remove one. Repeat toggles between a continuous circuit and a one-shot route. Changes do not interrupt the current leg."),
         FREIGHT("Freight contracts", "Turn deliveries into company funds",
             "Click an available order on the Freight Board to accept it. Check its goods, origin, destination, crate count, reward, and deadline.\n\n"
-            + "Schedule a train to visit both ends. The origin must have stock and the train needs enough free capacity. Orders pay when every crate is delivered; missed deadlines expire."),
+            + "Founding a station creates inbound and outbound offers for it. More offers appear over time when the board runs low. Schedule a train to visit both ends; the origin needs stock and the train needs enough capacity. Orders pay on delivery; missed deadlines expire."),
         SIGNALS("Block signals", "Keep trains from sharing a protected section",
             "Choose Block signals and click near a rail to place or remove a signal. Signals cost $55.\n\n"
             + "A train waits if another train is already on the same track section next to a signal. Unsignalled sections do not get this protection."),

@@ -14,7 +14,7 @@ The game starts with a regional railway, the Juniper locomotive, and a timber sh
 4. Let the train collect the crates and deliver them before the deadline.
 5. Use the payout to expand your railway.
 
-Stations produce their listed goods over time. Trains load accepted orders automatically when they stop at the origin, and unload them at the destination. Each carriage holds four crates. Timetables can have up to 20 stops and can repeat or run once.
+Stations produce their listed goods over time. Founding a station immediately adds inbound and outbound freight offers for it; new orders are also generated over time when the board runs low. Trains load accepted orders automatically when they stop at the origin, and unload them at the destination. Each carriage holds four crates. Timetables can have up to 20 stops and can repeat or run once.
 
 ## Railway Tools
 
