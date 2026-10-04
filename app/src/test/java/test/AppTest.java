@@ -116,6 +116,24 @@ class AppTest {
         assertEquals(activeDestination, train.destination);
     }
 
+    @Test void timetableAcceptsTwentyStopsAndRejectsTheTwentyFirst() {
+        RailwayWorld world = new RailwayWorld();
+        world.cash = 100_000;
+        for (int index = 0; index < 16; index++) {
+            assertNotNull(world.buildStation(new RailwayWorld.Node(1600 + index * 55, 1500)));
+        }
+        RailwayWorld.Train train = world.trains.get(0);
+
+        for (RailwayWorld.Station station : world.stations) {
+            if (!train.stops.contains(station.position) && train.stops.size() < RailwayWorld.MAX_SCHEDULE_STOPS) {
+                assertTrue(world.addScheduleStop(train, station));
+            }
+        }
+
+        assertEquals(20, train.stops.size());
+        assertFalse(world.addScheduleStop(train, world.stations.get(world.stations.size() - 1)));
+    }
+
     @Test void scheduledFreightDeliveryPaysItsContract() {
         RailwayWorld world = new RailwayWorld();
         RailwayWorld.Contract contract = world.contracts.get(0);
