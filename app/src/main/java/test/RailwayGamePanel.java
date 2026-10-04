@@ -18,6 +18,7 @@ import java.awt.geom.Path2D;
 import java.awt.geom.QuadCurve2D;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
@@ -26,6 +27,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.Timer;
 import javax.swing.filechooser.FileNameExtensionFilter;
+import java.util.prefs.Preferences;
 
 final class RailwayGamePanel extends JPanel {
     private static final int WIDTH = 1440;
@@ -37,19 +39,20 @@ final class RailwayGamePanel extends JPanel {
     private static final int BOARD_X = 1184;
     private static final int BOARD_W = 242;
 
-    private static final Color NIGHT = new Color(27, 42, 42);
-    private static final Color NIGHT_LIGHT = new Color(48, 67, 63);
-    private static final Color PAPER = new Color(245, 245, 234);
-    private static final Color INK = new Color(36, 48, 45);
-    private static final Color MUTED = new Color(111, 123, 115);
-    private static final Color GREEN = new Color(69, 132, 91);
+    private static final Color NIGHT = new Color(25, 40, 59);
+    private static final Color NIGHT_LIGHT = new Color(38, 67, 91);
+    private static final Color PAPER = new Color(249, 252, 255);
+    private static final Color INK = new Color(31, 48, 65);
+    private static final Color MUTED = new Color(105, 127, 144);
+    private static final Color BLUE = new Color(60, 145, 198);
     private static final Color RUST = new Color(192, 91, 67);
-    private static final Color TRACK = new Color(55, 63, 59);
+    private static final Color TRACK = new Color(48, 61, 77);
 
     RailwayWorld world = new RailwayWorld();
-    private Tool tool = Tool.TRACK;
+    private Tool tool = Tool.CURSOR;
     private RailwayWorld.Train selectedTrain = world.trains.get(0);
     private RailwayWorld.Contract selectedContract = world.contracts.get(0);
+    private RailwayWorld.Station selectedStation;
     boolean guideOpen;
     GuideTopic guideTopic = GuideTopic.OVERVIEW;
     private int selectedStopIndex = -1;
@@ -63,7 +66,7 @@ final class RailwayGamePanel extends JPanel {
     private boolean panning;
     private int lastPanX;
     private int lastPanY;
-    private String message = "Juniper is carrying the first timber order. Build a dependable route to Salt Wharf.";
+    private String message = "Select an item with the cursor, or choose a railway tool to begin building.";
     private long messageAt = System.currentTimeMillis();
 
     RailwayGamePanel() {
@@ -155,12 +158,13 @@ final class RailwayGamePanel extends JPanel {
                     return;
                 }
                 switch (event.getKeyCode()) {
-                    case KeyEvent.VK_1 -> chooseTool(Tool.TRACK);
-                    case KeyEvent.VK_2 -> chooseTool(Tool.SIGNAL);
-                    case KeyEvent.VK_3 -> chooseTool(Tool.STATION);
-                    case KeyEvent.VK_4 -> chooseTool(Tool.TRAIN);
-                    case KeyEvent.VK_5 -> chooseTool(Tool.SCHEDULE);
-                    case KeyEvent.VK_6 -> chooseTool(Tool.DEMOLISH);
+                    case KeyEvent.VK_1 -> chooseTool(Tool.CURSOR);
+                    case KeyEvent.VK_2 -> chooseTool(Tool.TRACK);
+                    case KeyEvent.VK_3 -> chooseTool(Tool.SIGNAL);
+                    case KeyEvent.VK_4 -> chooseTool(Tool.STATION);
+                    case KeyEvent.VK_5 -> chooseTool(Tool.TRAIN);
+                    case KeyEvent.VK_6 -> chooseTool(Tool.SCHEDULE);
+                    case KeyEvent.VK_7 -> chooseTool(Tool.DEMOLISH);
                     case KeyEvent.VK_F1 -> {
                         guideOpen = true;
                         guideTopic = GuideTopic.OVERVIEW;
@@ -205,6 +209,10 @@ final class RailwayGamePanel extends JPanel {
         return x >= MAP_X && x <= MAP_X + MAP_W && y >= MAP_Y && y <= MAP_Y + MAP_H;
     }
 
+    Tool currentTool() {
+        return tool;
+    }
+
     private void handleClick(int x, int y) {
         if (guideOpen) {
             handleGuideClick(x, y);
@@ -238,8 +246,8 @@ final class RailwayGamePanel extends JPanel {
         if (x >= 13 && x < 235) {
             Tool[] tools = Tool.values();
             for (int index = 0; index < tools.length; index++) {
-                int buttonY = 120 + index * 49;
-                if (y >= buttonY && y <= buttonY + 44) {
+                int buttonY = 120 + index * 41;
+                if (y >= buttonY && y <= buttonY + 37) {
                     chooseTool(tools[index]);
                     return;
                 }
@@ -326,6 +334,7 @@ final class RailwayGamePanel extends JPanel {
         }
         if (clickedTrain != null && tool != Tool.TRACK) {
             selectedTrain = clickedTrain;
+            selectedStation = null;
             selectedStopIndex = -1;
             announce(selectedTrain.name + " selected.");
             repaint();
@@ -333,6 +342,11 @@ final class RailwayGamePanel extends JPanel {
         }
 
         switch (tool) {
+            case CURSOR -> {
+                selectedStation = world.nearestStation(point, 32 / zoom);
+                announce(selectedStation == null ? "Cursor selected. Choose a tool or click a train or station."
+                        : selectedStation.name + " selected. Produces " + selectedStation.produces.label + ".");
+            }
             case TRACK -> placeTrack(point);
             case SIGNAL -> {
                 if (world.toggleSignal(point)) {
@@ -493,6 +507,7 @@ final class RailwayGamePanel extends JPanel {
         tool = next;
         trackStart = null;
         switch (tool) {
+            case CURSOR -> announce("CURSOR  /  Select a train or station without building.");
             case TRACK -> announce("TRACK  /  Click any point to begin a freeform route.");
             case SIGNAL -> announce("SIGNAL  /  Place a block signal beside a rail.");
             case STATION -> announce("STATION  /  Found a new stop anywhere on the map.");
@@ -529,6 +544,7 @@ final class RailwayGamePanel extends JPanel {
         }
         try {
             world.save(path, currentViewState());
+            rememberLastSave(path);
             announce("Game saved to " + path.getFileName() + ".");
         } catch (IOException exception) {
             announce("Save failed: " + exception.getMessage());
@@ -557,12 +573,39 @@ final class RailwayGamePanel extends JPanel {
             repaint();
             return;
         }
+        Path path = chooser.getSelectedFile().toPath();
+        if (restoreSavedGame(path)) {
+            rememberLastSave(path);
+            announce("Saved railway loaded.");
+        }
+        repaint();
+    }
+
+    void restoreLastSavedGame() {
         try {
-            RailwayWorld.LoadedGame loaded = RailwayWorld.load(chooser.getSelectedFile().toPath());
+            String savedPath = Preferences.userNodeForPackage(App.class).get("lastSavePath", "");
+            if (savedPath.isBlank()) {
+                return;
+            }
+            Path path = Path.of(savedPath);
+            if (!Files.isRegularFile(path) || !restoreSavedGame(path)) {
+                announce("Last save could not be restored. A new railway has been started.");
+            } else {
+                announce("Last saved railway restored.");
+            }
+        } catch (IllegalArgumentException | SecurityException exception) {
+            announce("Last save could not be restored. A new railway has been started.");
+        }
+    }
+
+    boolean restoreSavedGame(Path path) {
+        try {
+            RailwayWorld.LoadedGame loaded = RailwayWorld.load(path);
             world = loaded.world();
             RailwayWorld.ViewState view = loaded.view();
             selectedTrain = trainById(view.selectedTrainId());
             selectedContract = contractById(view.selectedContractId());
+            selectedStation = null;
             cameraX = view.cameraX();
             cameraY = view.cameraY();
             zoom = view.zoom();
@@ -571,14 +614,21 @@ final class RailwayGamePanel extends JPanel {
             selectedStopIndex = -1;
             trackStart = null;
             pointerWorld = null;
-            tool = Tool.TRACK;
+            tool = Tool.CURSOR;
             clampCamera();
-            announce("Saved railway loaded.");
+            return true;
         } catch (IOException exception) {
-            running = wasRunning;
             announce("Load failed: " + exception.getMessage());
+            return false;
         }
-        repaint();
+    }
+
+    private void rememberLastSave(Path path) {
+        try {
+            Preferences.userNodeForPackage(App.class)
+                    .put("lastSavePath", path.toAbsolutePath().toString());
+        } catch (SecurityException ignored) {
+        }
     }
 
     private JFileChooser saveChooser() {
@@ -635,7 +685,7 @@ final class RailwayGamePanel extends JPanel {
     private void drawHeader(Graphics2D g) {
         g.setColor(NIGHT);
         g.fillRect(0, 0, WIDTH, 82);
-        g.setColor(new Color(85, 138, 104));
+        g.setColor(new Color(71, 145, 190));
         g.fillRoundRect(18, 17, 47, 47, 10, 10);
         g.setColor(PAPER);
         g.setStroke(new BasicStroke(2.3f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
@@ -645,28 +695,28 @@ final class RailwayGamePanel extends JPanel {
         g.drawLine(49, 35, 49, 56);
         g.setFont(new Font("Dialog", Font.BOLD, 19));
         g.drawString("LAST MILE", 76, 39);
-        g.setColor(new Color(166, 190, 170));
+        g.setColor(new Color(168, 204, 222));
         g.setFont(new Font("Dialog", Font.PLAIN, 10));
         g.drawString("FREIGHT RAIL COMPANY", 77, 57);
 
-        g.setColor(new Color(157, 183, 161));
+        g.setColor(new Color(155, 197, 218));
         g.setFont(new Font("Dialog", Font.BOLD, 9));
         g.drawString("RAILWAY TIME", 355, 27);
         g.setColor(PAPER);
         g.setFont(new Font("Dialog", Font.BOLD, 22));
         g.drawString(String.format("%02d:%02d", world.minutes / 60, world.minutes % 60), 354, 55);
-        g.setColor(new Color(169, 190, 171));
+        g.setColor(new Color(183, 212, 228));
         g.setFont(new Font("Dialog", Font.PLAIN, 11));
         g.drawString("DAY " + world.day, 447, 53);
 
-        g.setColor(new Color(157, 183, 161));
+        g.setColor(new Color(155, 197, 218));
         g.setFont(new Font("Dialog", Font.BOLD, 9));
         g.drawString("COMPANY FUNDS", 584, 27);
         g.setColor(new Color(226, 192, 109));
         g.setFont(new Font("Dialog", Font.BOLD, 20));
         g.drawString(String.format("$%,d", world.cash), 582, 55);
 
-        g.setColor(new Color(157, 183, 161));
+        g.setColor(new Color(155, 197, 218));
         g.setFont(new Font("Dialog", Font.BOLD, 9));
         g.drawString("ORDERS DELIVERED", 779, 27);
         g.setColor(PAPER);
@@ -678,7 +728,7 @@ final class RailwayGamePanel extends JPanel {
         drawHeaderButton(g, 1086, 21, 76, 40, "LOAD", false);
         drawHeaderButton(g, 1190, 21, 99, 40, running ? "PAUSE" : "RESUME", running);
         drawHeaderButton(g, 1300, 21, 72, 40, fastForward ? "3x" : "1x", fastForward);
-        g.setColor(new Color(153, 179, 159));
+        g.setColor(new Color(166, 202, 221));
         g.setFont(new Font("Dialog", Font.PLAIN, 10));
         g.drawString("F1", 931, 73);
         g.drawString("CTRL+S", 1022, 73);
@@ -687,36 +737,36 @@ final class RailwayGamePanel extends JPanel {
     }
 
     private void drawTools(Graphics2D g) {
-        g.setColor(new Color(236, 237, 224));
+        g.setColor(new Color(237, 247, 252));
         g.fillRect(0, 82, 244, HEIGHT - 82);
-        g.setColor(new Color(217, 220, 205));
+        g.setColor(new Color(203, 224, 237));
         g.drawLine(243, 82, 243, HEIGHT);
         g.setColor(MUTED);
         g.setFont(new Font("Dialog", Font.BOLD, 9));
         g.drawString("COMPANY WORKSHOP", 18, 111);
 
         Tool[] tools = Tool.values();
-        String[] titles = {"Lay track", "Block signals", "Found station", "Buy locomotive",
-            "Set timetable", "Remove objects"};
-        String[] subtitles = {"$12 per section", "$55 each", "$175 each", "$425 each",
-            "ADD STOPS ON MAP", "50% refund"};
+        String[] titles = {"Cursor", "Lay track", "Block signals", "Found station",
+            "Buy locomotive", "Set timetable", "Remove objects"};
+        String[] subtitles = {"Select trains & stops", "$12 per section", "$55 each", "$175 each",
+            "$425 each", "ADD STOPS ON MAP", "50% refund"};
         for (int index = 0; index < tools.length; index++) {
-            int y = 120 + index * 49;
+            int y = 120 + index * 41;
             boolean active = tool == tools[index];
-            g.setColor(active ? new Color(216, 231, 213) : PAPER);
-            g.fillRoundRect(12, y, 220, 44, 7, 7);
-            g.setColor(active ? GREEN : new Color(218, 221, 208));
-            g.drawRoundRect(12, y, 220, 44, 7, 7);
-            drawToolGlyph(g, tools[index], 33, y + 22, active ? GREEN : MUTED);
+            g.setColor(active ? new Color(220, 239, 249) : PAPER);
+            g.fillRoundRect(12, y, 220, 37, 7, 7);
+            g.setColor(active ? BLUE : new Color(207, 226, 239));
+            g.drawRoundRect(12, y, 220, 37, 7, 7);
+            drawToolGlyph(g, tools[index], 33, y + 18, active ? BLUE : MUTED);
             g.setColor(INK);
-            g.setFont(new Font("Dialog", Font.BOLD, 11));
-            g.drawString(titles[index], 53, y + 20);
+            g.setFont(new Font("Dialog", Font.BOLD, 10));
+            g.drawString(titles[index], 53, y + 16);
             g.setColor(MUTED);
-            g.setFont(new Font("Dialog", Font.PLAIN, 9));
-            g.drawString(subtitles[index], 53, y + 34);
+            g.setFont(new Font("Dialog", Font.PLAIN, 8));
+            g.drawString(subtitles[index], 53, y + 29);
             if (active) {
-                g.setColor(GREEN);
-                g.fillRoundRect(224, y + 13, 4, 18, 3, 3);
+                g.setColor(BLUE);
+                g.fillRoundRect(224, y + 10, 4, 17, 3, 3);
             }
         }
 
@@ -728,7 +778,7 @@ final class RailwayGamePanel extends JPanel {
         int y = 426;
         g.setColor(PAPER);
         g.fillRoundRect(x, y, 220, 303, 8, 8);
-        g.setColor(new Color(216, 219, 206));
+        g.setColor(new Color(205, 228, 241));
         g.drawRoundRect(x, y, 220, 303, 8, 8);
         g.setColor(MUTED);
         g.setFont(new Font("Dialog", Font.BOLD, 9));
@@ -742,11 +792,11 @@ final class RailwayGamePanel extends JPanel {
         g.setColor(INK);
         g.setFont(new Font("Dialog", Font.BOLD, 16));
         g.drawString(selectedTrain.name, x + 14, y + 48);
-        g.setColor(GREEN);
+        g.setColor(BLUE);
         g.setFont(new Font("Dialog", Font.PLAIN, 10));
         g.drawString("NEXT STOP  /  " + world.nextStopName(selectedTrain), x + 14, y + 68);
 
-        g.setColor(new Color(229, 231, 218));
+        g.setColor(new Color(229, 242, 250));
         g.drawLine(x + 14, y + 82, x + 206, y + 82);
         g.setColor(MUTED);
         g.setFont(new Font("Dialog", Font.BOLD, 9));
@@ -756,7 +806,7 @@ final class RailwayGamePanel extends JPanel {
         g.drawString(selectedTrain.load() + " / " + (selectedTrain.carriages * 4) + " crates", x + 14, y + 119);
         int capacity = selectedTrain.carriages * 4;
         int loaded = selectedTrain.load();
-        g.setColor(new Color(223, 226, 214));
+        g.setColor(new Color(232, 243, 250));
         g.fillRoundRect(x + 14, y + 127, 190, 6, 4, 4);
         if (loaded > 0) {
             g.setColor(new Color(201, 149, 78));
@@ -779,10 +829,10 @@ final class RailwayGamePanel extends JPanel {
                 RailwayWorld.Station station = world.stationAt(selectedTrain.stops.get(index));
                 int rowY = y + 158 + index * 21;
                 if (index == selectedStopIndex) {
-                    g.setColor(new Color(226, 235, 219));
+                    g.setColor(new Color(220, 239, 249));
                     g.fillRoundRect(x + 8, rowY, 202, 20, 4, 4);
                 }
-                g.setColor(index == 0 ? GREEN : MUTED);
+                g.setColor(index == 0 ? BLUE : MUTED);
                 g.fillOval(x + 15, rowY + 7, 6, 6);
                 g.setColor(INK);
                 g.drawString((index + 1) + ". " + (station == null ? "Open line" : station.name),
@@ -800,23 +850,23 @@ final class RailwayGamePanel extends JPanel {
         }
 
         int controlY = y + 270;
-        g.setColor(selectedTrain.looping ? new Color(224, 234, 216) : new Color(235, 232, 218));
+        g.setColor(selectedTrain.looping ? new Color(220, 239, 249) : new Color(235, 232, 218));
         g.fillRoundRect(x + 12, controlY, 98, 25, 5, 5);
-        g.setColor(selectedTrain.looping ? GREEN : new Color(163, 128, 72));
+        g.setColor(selectedTrain.looping ? BLUE : new Color(163, 128, 72));
         g.drawRoundRect(x + 12, controlY, 98, 25, 5, 5);
         g.setFont(new Font("Dialog", Font.BOLD, 9));
         g.drawString(selectedTrain.looping ? "REPEAT: ON" : "REPEAT: OFF", x + 25, controlY + 16);
-        g.setColor(new Color(224, 234, 216));
+        g.setColor(new Color(220, 239, 249));
         g.fillRoundRect(x + 118, controlY, 90, 25, 5, 5);
-        g.setColor(GREEN);
+        g.setColor(BLUE);
         g.drawRoundRect(x + 118, controlY, 90, 25, 5, 5);
         g.drawString("+ CAR  $" + RailwayWorld.CARRIAGE_COST, x + 126, controlY + 16);
     }
 
     private void drawScheduleAction(Graphics2D g, int x, int y, String label) {
-        g.setColor(new Color(239, 241, 231));
+        g.setColor(new Color(247, 251, 254));
         g.fillRoundRect(x, y, 19, 18, 4, 4);
-        g.setColor(new Color(207, 213, 198));
+        g.setColor(new Color(209, 231, 242));
         g.drawRoundRect(x, y, 19, 18, 4, 4);
         g.setColor(INK);
         g.setFont(new Font("Dialog", Font.BOLD, 11));
@@ -824,9 +874,9 @@ final class RailwayGamePanel extends JPanel {
     }
 
     private void drawMap(Graphics2D g) {
-        g.setColor(new Color(250, 250, 242));
+        g.setColor(new Color(252, 254, 255));
         g.fillRoundRect(MAP_X, MAP_Y, MAP_W, MAP_H, 10, 10);
-        g.setColor(new Color(214, 219, 203));
+        g.setColor(new Color(226, 240, 248));
         g.drawRoundRect(MAP_X, MAP_Y, MAP_W, MAP_H, 10, 10);
 
         Graphics2D worldGraphics = (Graphics2D) g.create();
@@ -850,7 +900,7 @@ final class RailwayGamePanel extends JPanel {
 
         g.setColor(new Color(254, 253, 246, 237));
         g.fillRoundRect(MAP_X + 14, MAP_Y + 13, 203, 36, 7, 7);
-        g.setColor(new Color(221, 224, 210));
+        g.setColor(new Color(221, 238, 248));
         g.drawRoundRect(MAP_X + 14, MAP_Y + 13, 203, 36, 7, 7);
         g.setColor(RUST);
         g.fillOval(MAP_X + 25, MAP_Y + 26, 8, 8);
@@ -868,13 +918,13 @@ final class RailwayGamePanel extends JPanel {
     }
 
     private void drawTerrain(Graphics2D g) {
-        g.setColor(new Color(231, 237, 219));
+        g.setColor(new Color(235, 246, 252));
         g.fillRect(0, 0, RailwayWorld.WIDTH, RailwayWorld.HEIGHT);
-        g.setColor(new Color(220, 231, 210));
+        g.setColor(new Color(225, 241, 249));
         g.fillOval(95, 160, 840, 490);
         g.fillOval(1150, 1020, 900, 570);
         g.fillOval(2070, 200, 820, 460);
-        g.setColor(new Color(241, 237, 214));
+        g.setColor(new Color(244, 249, 252));
         g.fillOval(800, 90, 600, 430);
         g.fillOval(100, 1120, 780, 620);
         g.fillOval(2110, 1300, 760, 520);
@@ -884,15 +934,15 @@ final class RailwayGamePanel extends JPanel {
         river.curveTo(1270, 350, 1760, 480, 1550, 840);
         river.curveTo(1340, 1180, 1770, 1400, 1670, 1710);
         river.curveTo(1600, 1900, 1950, 2040, 1990, 2290);
-        g.setColor(new Color(180, 214, 210));
+        g.setColor(new Color(178, 220, 240));
         g.setStroke(new BasicStroke(150, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
         g.draw(river);
-        g.setColor(new Color(198, 224, 218));
+        g.setColor(new Color(195, 230, 248));
         g.setStroke(new BasicStroke(125, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
         g.draw(river);
 
         for (int ring = 0; ring < 5; ring++) {
-            g.setColor(new Color(205, 214, 191, 125));
+            g.setColor(new Color(207, 228, 241, 125));
             g.setStroke(new BasicStroke(1));
             g.drawOval(120 + ring * 17, 145 + ring * 12, 770 - ring * 34, 450 - ring * 25);
             g.drawOval(1900 + ring * 20, 1160 + ring * 13, 710 - ring * 39, 520 - ring * 26);
@@ -900,7 +950,7 @@ final class RailwayGamePanel extends JPanel {
 
         g.setStroke(new BasicStroke(13, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND,
                 10, new float[]{26, 18}, 0));
-        g.setColor(new Color(196, 198, 178));
+        g.setColor(new Color(198, 218, 232));
         g.draw(new QuadCurve2D.Double(-60, 910, 910, 700, 1860, 860));
         g.draw(new QuadCurve2D.Double(580, 2100, 1350, 1510, 2640, 1530));
         g.setStroke(new BasicStroke(8, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND,
@@ -915,9 +965,9 @@ final class RailwayGamePanel extends JPanel {
             if (x > 1250 && x < 1850 && y > 250 && y < 1830) {
                 continue;
             }
-            g.setColor(index % 4 == 0 ? new Color(120, 158, 110) : new Color(145, 175, 122));
+            g.setColor(index % 4 == 0 ? new Color(127, 180, 207) : new Color(153, 198, 224));
             g.fillOval(x, y, 14, 9);
-            g.setColor(new Color(170, 193, 143));
+            g.setColor(new Color(188, 219, 237));
             g.fillOval(x + 4, y - 4, 7, 8);
         }
 
@@ -930,7 +980,7 @@ final class RailwayGamePanel extends JPanel {
     }
 
     private void mapLabel(Graphics2D g, String text, int x, int y) {
-        g.setColor(new Color(111, 137, 110));
+        g.setColor(new Color(100, 144, 174));
         g.setFont(new Font("Dialog", Font.BOLD, 13));
         g.drawString(text, x, y);
     }
@@ -943,13 +993,13 @@ final class RailwayGamePanel extends JPanel {
             double y2 = edge.second().y();
             Line2D line = new Line2D.Double(x1, y1, x2, y2);
             g.setStroke(new BasicStroke(14, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-            g.setColor(new Color(192, 194, 177));
+            g.setColor(new Color(199, 215, 225));
             g.draw(line);
             g.setStroke(new BasicStroke(8, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
             g.setColor(TRACK);
             g.draw(line);
             g.setStroke(new BasicStroke(1.5f));
-            g.setColor(new Color(213, 201, 172));
+            g.setColor(new Color(207, 225, 236));
             double length = edge.first().distance(edge.second());
             int sleepers = Math.max(1, (int) (length / 19));
             double acrossX = -(y2 - y1) / length * 5;
@@ -982,7 +1032,7 @@ final class RailwayGamePanel extends JPanel {
         if (trackStart == null || pointerWorld == null) {
             return;
         }
-        g.setColor(new Color(61, 136, 89, 190));
+        g.setColor(new Color(63, 152, 202, 190));
         g.setStroke(new BasicStroke(3, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND,
                 10, new float[]{7, 6}, 0));
         g.draw(new Line2D.Double(trackStart.x(), trackStart.y(), pointerWorld.x(), pointerWorld.y()));
@@ -992,11 +1042,18 @@ final class RailwayGamePanel extends JPanel {
     private void drawStation(Graphics2D g, RailwayWorld.Station station) {
         int x = (int) Math.round(station.position.x());
         int y = (int) Math.round(station.position.y());
-        g.setColor(new Color(51, 63, 55, 45));
+        if (station == selectedStation) {
+            g.setColor(new Color(60, 145, 198, 55));
+            g.fillOval(x - 37, y - 37, 74, 74);
+            g.setColor(BLUE);
+            g.setStroke(new BasicStroke(2));
+            g.drawOval(x - 37, y - 37, 74, 74);
+        }
+        g.setColor(new Color(51, 71, 88, 45));
         g.fillRoundRect(x - 29, y - 13, 58, 34, 6, 6);
-        g.setColor(new Color(126, 89, 59));
+        g.setColor(new Color(76, 128, 159));
         g.fillRoundRect(x - 26, y - 17, 52, 30, 5, 5);
-        g.setColor(new Color(241, 216, 165));
+        g.setColor(new Color(210, 233, 247));
         g.fillRect(x - 20, y - 11, 40, 6);
         g.setColor(PAPER);
         g.fillRect(x - 14, y - 3, 5, 10);
@@ -1008,7 +1065,7 @@ final class RailwayGamePanel extends JPanel {
 
         g.setColor(new Color(254, 253, 245, 238));
         g.fillRoundRect(x - 42, y - 42, 84, 17, 5, 5);
-        g.setColor(new Color(218, 220, 205));
+        g.setColor(new Color(205, 226, 239));
         g.drawRoundRect(x - 42, y - 42, 84, 17, 5, 5);
         g.setColor(INK);
         g.setFont(new Font("Dialog", Font.BOLD, 10));
@@ -1044,7 +1101,7 @@ final class RailwayGamePanel extends JPanel {
         g.setColor(TRACK);
         g.setStroke(new BasicStroke(2));
         g.drawLine(x + 18, y + 6, x + 18, y - 28);
-        g.setColor(blocked ? RUST : new Color(77, 155, 95));
+        g.setColor(blocked ? RUST : new Color(67, 157, 209));
         g.fillRoundRect(x + 12, y - 31, 13, 13, 4, 4);
         g.setColor(PAPER);
         g.drawRoundRect(x + 12, y - 31, 13, 13, 4, 4);
@@ -1135,15 +1192,15 @@ final class RailwayGamePanel extends JPanel {
         if (flipped) {
             car.scale(-1, 1);
         }
-        car.setColor(new Color(47, 53, 49));
+        car.setColor(new Color(46, 59, 74));
         car.fillRoundRect(locomotive ? -17 : -13, -9, locomotive ? 34 : 26, 18, 6, 6);
         car.setColor(locomotive && selected ? new Color(207, 150, 62)
-                : locomotive ? new Color(69, 133, 92) : new Color(151, 136, 112));
+                : locomotive ? new Color(59, 138, 186) : new Color(125, 162, 184));
         car.fillRoundRect(locomotive ? -14 : -10, -7, locomotive ? 28 : 20, 14, 4, 4);
-        car.setColor(new Color(212, 228, 214));
+        car.setColor(new Color(212, 235, 247));
         car.fillRoundRect(-8, -5, 7, 6, 2, 2);
         car.fillRoundRect(2, -5, 7, 6, 2, 2);
-        car.setColor(new Color(47, 55, 50));
+        car.setColor(new Color(45, 57, 72));
         car.fillOval(-9, 6, 6, 6);
         car.fillOval(4, 6, 6, 6);
         if (locomotive) {
@@ -1158,7 +1215,7 @@ final class RailwayGamePanel extends JPanel {
         int y = MAP_Y + MAP_H - 49;
         g.setColor(new Color(251, 251, 244, 238));
         g.fillRoundRect(x, y, 102, 36, 7, 7);
-        g.setColor(new Color(213, 218, 204));
+        g.setColor(new Color(213, 231, 242));
         g.drawRoundRect(x, y, 102, 36, 7, 7);
         drawZoomButton(g, x + 4, y + 4, "-");
         drawZoomButton(g, x + 70, y + 4, "+");
@@ -1168,9 +1225,9 @@ final class RailwayGamePanel extends JPanel {
     }
 
     private void drawZoomButton(Graphics2D g, int x, int y, String text) {
-        g.setColor(new Color(235, 238, 225));
+        g.setColor(new Color(241, 248, 252));
         g.fillRoundRect(x, y, 28, 28, 5, 5);
-        g.setColor(new Color(207, 213, 198));
+        g.setColor(new Color(209, 231, 242));
         g.drawRoundRect(x, y, 28, 28, 5, 5);
         g.setColor(INK);
         g.setFont(new Font("Dialog", Font.BOLD, 17));
@@ -1178,9 +1235,9 @@ final class RailwayGamePanel extends JPanel {
     }
 
     private void drawFreightBoard(Graphics2D g) {
-        g.setColor(new Color(238, 239, 226));
+        g.setColor(new Color(244, 249, 252));
         g.fillRect(1178, 82, 262, HEIGHT - 82);
-        g.setColor(new Color(218, 221, 207));
+        g.setColor(new Color(207, 226, 240));
         g.drawLine(1178, 82, 1178, HEIGHT);
         g.setColor(INK);
         g.setFont(new Font("Dialog", Font.BOLD, 14));
@@ -1193,9 +1250,9 @@ final class RailwayGamePanel extends JPanel {
             RailwayWorld.Contract contract = world.contracts.get(index);
             int y = 146 + index * 132;
             boolean selected = contract == selectedContract;
-            g.setColor(selected ? new Color(251, 250, 241) : new Color(245, 245, 234));
+            g.setColor(selected ? new Color(250, 253, 255) : new Color(245, 245, 234));
             g.fillRoundRect(BOARD_X, y, BOARD_W, 122, 7, 7);
-            g.setColor(selected ? new Color(159, 181, 141) : new Color(218, 220, 207));
+            g.setColor(selected ? new Color(153, 195, 216) : new Color(207, 227, 242));
             g.drawRoundRect(BOARD_X, y, BOARD_W, 122, 7, 7);
 
             g.setColor(contract.goods.color);
@@ -1225,14 +1282,14 @@ final class RailwayGamePanel extends JPanel {
                     contract.deadlineDay), BOARD_X + 66, y + 102);
 
             if (contract.state == RailwayWorld.ContractState.AVAILABLE) {
-                g.setColor(new Color(68, 125, 83));
+                g.setColor(new Color(57, 133, 180));
                 g.fillRoundRect(BOARD_X + 160, y + 87, 70, 24, 5, 5);
                 g.setColor(Color.WHITE);
                 g.setFont(new Font("Dialog", Font.BOLD, 9));
                 g.drawString("ACCEPT", BOARD_X + 177, y + 103);
             } else {
                 int progress = contract.amount == 0 ? 0 : 132 * contract.delivered / contract.amount;
-                g.setColor(new Color(223, 226, 213));
+                g.setColor(new Color(234, 245, 252));
                 g.fillRoundRect(BOARD_X + 124, y + 93, 103, 5, 3, 3);
                 if (progress > 0) {
                     g.setColor(statusColor(contract.state));
@@ -1247,9 +1304,9 @@ final class RailwayGamePanel extends JPanel {
     }
 
     private void drawRoster(Graphics2D g) {
-        g.setColor(new Color(248, 248, 240));
+        g.setColor(new Color(249, 252, 255));
         g.fillRect(244, 738, WIDTH - 244, HEIGHT - 738);
-        g.setColor(new Color(218, 221, 207));
+        g.setColor(new Color(207, 226, 240));
         g.drawLine(244, 738, WIDTH, 738);
         g.setColor(MUTED);
         g.setFont(new Font("Dialog", Font.BOLD, 9));
@@ -1259,11 +1316,11 @@ final class RailwayGamePanel extends JPanel {
             RailwayWorld.Train train = world.trains.get(index);
             int x = 266 + index * 301;
             boolean active = train == selectedTrain;
-            g.setColor(active ? new Color(227, 237, 220) : new Color(252, 251, 245));
+            g.setColor(active ? new Color(226, 242, 250) : new Color(252, 251, 245));
             g.fillRoundRect(x, 772, 284, 56, 6, 6);
-            g.setColor(active ? new Color(167, 192, 149) : new Color(223, 225, 214));
+            g.setColor(active ? new Color(166, 205, 223) : new Color(234, 245, 252));
             g.drawRoundRect(x, 772, 284, 56, 6, 6);
-            g.setColor(active ? GREEN : MUTED);
+            g.setColor(active ? BLUE : MUTED);
             g.fillOval(x + 12, 786, 8, 8);
             g.setColor(INK);
             g.setFont(new Font("Dialog", Font.BOLD, 11));
@@ -1273,7 +1330,7 @@ final class RailwayGamePanel extends JPanel {
             g.drawString("To " + world.nextStopName(train) + "    " + train.load()
                     + "/" + train.carriages * 4 + " crates", x + 29, 813);
             if (active) {
-                g.setColor(GREEN);
+                g.setColor(BLUE);
                 g.setFont(new Font("Dialog", Font.BOLD, 8));
                 g.drawString("SELECTED", x + 218, 793);
             }
@@ -1299,10 +1356,10 @@ final class RailwayGamePanel extends JPanel {
 
     private Color statusColor(RailwayWorld.ContractState state) {
         return switch (state) {
-            case AVAILABLE -> new Color(111, 123, 115);
+            case AVAILABLE -> new Color(105, 127, 144);
             case ACCEPTED, LOADING -> new Color(179, 128, 55);
             case IN_TRANSIT -> new Color(58, 116, 145);
-            case COMPLETE -> new Color(66, 132, 88);
+            case COMPLETE -> new Color(52, 145, 195);
             case EXPIRED -> RUST;
         };
     }
@@ -1320,9 +1377,9 @@ final class RailwayGamePanel extends JPanel {
 
     private void drawHeaderButton(Graphics2D g, int x, int y, int width, int height,
             String label, boolean active) {
-        g.setColor(active ? new Color(79, 133, 93) : NIGHT_LIGHT);
+        g.setColor(active ? new Color(66, 145, 195) : NIGHT_LIGHT);
         g.fillRoundRect(x, y, width, height, 7, 7);
-        g.setColor(new Color(125, 157, 124));
+        g.setColor(new Color(123, 167, 197));
         g.drawRoundRect(x, y, width, height, 7, 7);
         g.setColor(PAPER);
         g.setFont(new Font("Dialog", Font.BOLD, 10));
@@ -1334,6 +1391,15 @@ final class RailwayGamePanel extends JPanel {
         g.setColor(color);
         g.setStroke(new BasicStroke(2, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
         switch (tool) {
+            case CURSOR -> {
+                g.drawLine(x - 7, y - 11, x + 7, y + 3);
+                g.drawLine(x + 7, y + 3, x + 1, y + 3);
+                g.drawLine(x + 1, y + 3, x + 4, y + 10);
+                g.drawLine(x + 4, y + 10, x + 1, y + 12);
+                g.drawLine(x + 1, y + 12, x - 2, y + 5);
+                g.drawLine(x - 2, y + 5, x - 6, y + 9);
+                g.drawLine(x - 6, y + 9, x - 7, y - 11);
+            }
             case TRACK -> {
                 g.drawLine(x - 8, y + 7, x + 8, y - 7);
                 g.drawLine(x - 8, y + 2, x + 8, y - 12);
@@ -1375,7 +1441,7 @@ final class RailwayGamePanel extends JPanel {
     }
 
     private void drawGuide(Graphics2D g) {
-        g.setColor(new Color(16, 26, 25, 165));
+        g.setColor(new Color(14, 25, 41, 165));
         g.fillRect(0, 0, WIDTH, HEIGHT);
 
         int x = 220;
@@ -1384,7 +1450,7 @@ final class RailwayGamePanel extends JPanel {
         int height = 640;
         g.setColor(new Color(250, 249, 241));
         g.fillRoundRect(x, y, width, height, 12, 12);
-        g.setColor(new Color(218, 221, 207));
+        g.setColor(new Color(207, 226, 240));
         g.drawRoundRect(x, y, width, height, 12, 12);
         g.setColor(NIGHT);
         g.fillRoundRect(x, y, width, 70, 12, 12);
@@ -1392,21 +1458,21 @@ final class RailwayGamePanel extends JPanel {
         g.setColor(PAPER);
         g.setFont(new Font("Dialog", Font.BOLD, 18));
         g.drawString("FIELD GUIDE", x + 25, y + 32);
-        g.setColor(new Color(177, 198, 179));
+        g.setColor(new Color(183, 216, 230));
         g.setFont(new Font("Dialog", Font.PLAIN, 10));
         g.drawString("RAILWAY OPERATIONS MANUAL", x + 26, y + 51);
         drawHeaderButton(g, x + width - 62, y + 18, 39, 35, "X", false);
 
-        g.setColor(new Color(238, 239, 226));
+        g.setColor(new Color(244, 249, 252));
         g.fillRoundRect(x + 13, y + 84, 207, height - 99, 8, 8);
         for (int index = 0; index < GuideTopic.values().length; index++) {
             GuideTopic topic = GuideTopic.values()[index];
             int rowY = y + 81 + index * 43;
             boolean active = topic == guideTopic;
-            g.setColor(active ? new Color(218, 232, 213) : new Color(238, 239, 226));
+            g.setColor(active ? new Color(220, 239, 249) : new Color(244, 249, 252));
             g.fillRoundRect(x + 20, rowY + 3, 193, 37, 6, 6);
             if (active) {
-                g.setColor(GREEN);
+                g.setColor(BLUE);
                 g.fillRoundRect(x + 20, rowY + 11, 3, 20, 2, 2);
             }
             g.setColor(active ? INK : MUTED);
@@ -1424,10 +1490,10 @@ final class RailwayGamePanel extends JPanel {
         g.setColor(INK);
         g.setFont(new Font("Dialog", Font.BOLD, 23));
         g.drawString(guideTopic.title, contentX, contentY + 14);
-        g.setColor(new Color(220, 222, 211));
+        g.setColor(new Color(215, 231, 240));
         g.drawLine(contentX, contentY + 31, contentX + contentWidth, contentY + 31);
 
-        g.setColor(new Color(62, 77, 68));
+        g.setColor(new Color(50, 74, 96));
         g.setFont(new Font("Dialog", Font.PLAIN, 14));
         int textY = contentY + 67;
         for (String paragraph : guideTopic.body.split("\\n")) {
@@ -1467,14 +1533,14 @@ final class RailwayGamePanel extends JPanel {
         return y;
     }
 
-    private enum Tool {
-        TRACK, SIGNAL, STATION, TRAIN, SCHEDULE, DEMOLISH
+    enum Tool {
+        CURSOR, TRACK, SIGNAL, STATION, TRAIN, SCHEDULE, DEMOLISH
     }
 
         enum GuideTopic {
         OVERVIEW("Overview", "Run a regional freight railway",
-            "Accept a contract, make sure a train visits its origin and destination, then collect the delivery payment.\n\n"
-            + "Juniper starts with timber aboard and a two-stop route. New orders must be accepted before their cargo is loaded."),
+            "The game opens in Cursor mode so map clicks select trains and stations without building anything. Choose a tool when you are ready to act.\n\n"
+            + "Accept a contract, make sure a train visits its origin and destination, then collect the delivery payment. Juniper starts with timber aboard."),
         TRACK("Track", "Build connected rail anywhere on the map",
             "Choose Lay track, click a starting point, then click an endpoint. Keep clicking to extend the line; press Escape to finish.\n\n"
             + "Track costs $12 per section. Nearby endpoints snap together and crossings connect as junctions. Rails occupied by a train or its carriages cannot be removed."),
@@ -1501,7 +1567,7 @@ final class RailwayGamePanel extends JPanel {
             + "A save includes your map, stations, stock, contracts, schedules, train positions, cargo, and current view. Loading asks before replacing the current railway."),
         MAP("Map & controls", "Navigate the map and operate the clock",
             "Scroll over the map or use its +/− buttons to zoom. Right-drag to pan. The map stays proportional when the window is resized.\n\n"
-            + "Press 1–6 to select tools, Space to pause or resume, and F1 to open this guide. Press Escape to close the guide or finish drawing track.");
+                + "Press 1 for Cursor and 2–7 for railway tools, Space to pause or resume, and F1 to open this guide. Press Escape to close the guide or finish drawing track.");
 
         final String label;
         final String title;

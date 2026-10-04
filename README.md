@@ -20,6 +20,7 @@ Stations produce their listed goods over time. Trains load accepted orders autom
 
 | Tool | What it does | Cost |
 | --- | --- | ---: |
+| Cursor | Select trains and stations without changing the railway. This is the starting mode. | Free |
 | Lay track | Draw connected, freeform track sections. Nearby endpoints snap together and crossings connect as junctions. | $12 per section |
 | Block signals | Add a basic occupancy signal beside a rail. A train waits if another train occupies the same protected section. | $55 |
 | Found station | Place a station anywhere on the map. Stations placed near track snap to it. | $175 |
@@ -33,7 +34,8 @@ Removal is blocked when it would disrupt active gameplay: trains carrying freigh
 
 | Input | Action |
 | --- | --- |
-| `1`–`6` | Select a railway tool |
+| `1` | Cursor: select trains and stations without building |
+| `2`–`7` | Select a railway tool |
 | Mouse click | Use the selected tool or select a train, order, or timetable stop |
 | Track tool: click twice | Start and finish a track section; keep clicking to continue the route |
 | `Esc` | Finish drawing track, or close the guide when it is open |

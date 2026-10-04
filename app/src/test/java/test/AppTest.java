@@ -7,6 +7,7 @@ import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.awt.event.MouseEvent;
 import java.nio.file.Path;
+import java.util.prefs.Preferences;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.*;
@@ -29,7 +30,20 @@ class AppTest {
         Graphics2D graphics = image.createGraphics();
         game.paint(graphics);
         graphics.dispose();
-        assertEquals(new java.awt.Color(27, 42, 42).getRGB(), image.getRGB(10, 10));
+        assertEquals(new java.awt.Color(25, 40, 59).getRGB(), image.getRGB(10, 10));
+        assertNoGreenPixels(image);
+    }
+
+    @Test void newGameStartsInCursorMode() {
+        RailwayGamePanel game = new App().createGamePanel();
+        game.setSize(1440, 900);
+        int trackCount = game.world.tracks.size();
+
+        assertEquals(RailwayGamePanel.Tool.CURSOR, game.currentTool());
+        click(game, 900, 600);
+        assertEquals(trackCount, game.world.tracks.size());
+        click(game, 60, 178);
+        assertEquals(RailwayGamePanel.Tool.TRACK, game.currentTool());
     }
 
     @Test void bookButtonOpensNavigableMechanicGuide() {
@@ -46,7 +60,7 @@ class AppTest {
         Graphics2D graphics = image.createGraphics();
         game.paint(graphics);
         graphics.dispose();
-        assertEquals(new java.awt.Color(27, 42, 42).getRGB(), image.getRGB(230, 160));
+        assertEquals(new java.awt.Color(25, 40, 59).getRGB(), image.getRGB(230, 160));
 
         click(game, 1190, 164);
         assertFalse(game.guideOpen);
@@ -73,8 +87,8 @@ class AppTest {
         game.paint(graphics);
         graphics.dispose();
 
-        assertEquals(new java.awt.Color(245, 245, 234).getRGB(), image.getRGB(10, 10));
-        assertEquals(new java.awt.Color(27, 42, 42).getRGB(), image.getRGB(10, 30));
+        assertEquals(new java.awt.Color(249, 252, 255).getRGB(), image.getRGB(10, 10));
+        assertEquals(new java.awt.Color(25, 40, 59).getRGB(), image.getRGB(10, 30));
     }
 
     @Test void timetableButtonsReorderStopsAndToggleRepeating() {
@@ -268,6 +282,36 @@ class AppTest {
         assertEquals(world.cash, restored.cash);
     }
 
+        @Test void startupRestoresTheRememberedSave(@TempDir Path tempDirectory)
+            throws java.io.IOException, java.util.prefs.BackingStoreException {
+        RailwayWorld savedWorld = new RailwayWorld();
+        savedWorld.cash += 250;
+        RailwayWorld.Train savedTrain = savedWorld.trains.get(0);
+        Path savePath = tempDirectory.resolve("last-railway.lmsave");
+        savedWorld.save(savePath, new RailwayWorld.ViewState(0, 0, 0.62,
+                savedTrain.id, savedWorld.contracts.get(0).id, true, false));
+
+        Preferences preferences = Preferences.userNodeForPackage(App.class);
+        String previousPath = preferences.get("lastSavePath", null);
+        try {
+            preferences.put("lastSavePath", savePath.toString());
+            RailwayGamePanel game = new App().createGamePanel();
+
+            game.restoreLastSavedGame();
+
+            assertEquals(savedWorld.cash, game.world.cash);
+            assertEquals(savedWorld.tracks, game.world.tracks);
+            assertEquals(RailwayGamePanel.Tool.CURSOR, game.currentTool());
+        } finally {
+            if (previousPath == null) {
+                preferences.remove("lastSavePath");
+            } else {
+                preferences.put("lastSavePath", previousPath);
+            }
+            preferences.flush();
+        }
+    }
+
     private static void click(RailwayGamePanel panel, int x, int y) {
         MouseEvent event = new MouseEvent(panel, MouseEvent.MOUSE_PRESSED,
                 System.currentTimeMillis(), 0, x, y, 1, false, MouseEvent.BUTTON1);
@@ -290,5 +334,18 @@ class AppTest {
             nearest = Math.min(nearest, Math.hypot(x - px, y - py));
         }
         return nearest;
+    }
+
+    private static void assertNoGreenPixels(BufferedImage image) {
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                int pixel = image.getRGB(x, y);
+                int red = pixel >>> 16 & 255;
+                int green = pixel >>> 8 & 255;
+                int blue = pixel & 255;
+                assertFalse(green > red + 18 && green > blue + 18,
+                        "unexpected green pixel at " + x + ", " + y);
+            }
+        }
     }
 }

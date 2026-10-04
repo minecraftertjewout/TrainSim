@@ -1217,7 +1217,7 @@ final class RailwayWorld {
 
     enum Goods {
         TIMBER("Timber", new java.awt.Color(180, 113, 69)),
-        FOOD("Produce", new java.awt.Color(98, 153, 95)),
+        FOOD("Produce", new java.awt.Color(79, 157, 204)),
         MAIL("Mail", new java.awt.Color(91, 133, 182)),
         ORE("Ore", new java.awt.Color(130, 119, 110));
 

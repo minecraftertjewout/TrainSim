@@ -22,7 +22,9 @@ public class App {
             JFrame frame = new JFrame(app.getTitle());
             frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
             frame.setResizable(true);
-            frame.add(app.createGamePanel());
+            RailwayGamePanel gamePanel = app.createGamePanel();
+            gamePanel.restoreLastSavedGame();
+            frame.add(gamePanel);
             frame.pack();
             frame.setSize(1440, 900);
             frame.setMinimumSize(new java.awt.Dimension(1100, 740));
