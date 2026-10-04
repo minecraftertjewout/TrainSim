@@ -1,5 +1,7 @@
 # Last Mile
 
+> Disclaimer: This project was vibecoded for fun.
+
 **Last Mile** is a 2D freight railway management game built with Java Swing. Lay rail across a freeform map, connect stations, schedule trains, and deliver freight before contracts expire.
 
 ## Gameplay
