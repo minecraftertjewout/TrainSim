@@ -28,7 +28,7 @@ final class RailwayWorld {
     static final int STATION_COST = 175;
     static final int TRAIN_COST = 425;
     static final int CARRIAGE_COST = 85;
-    static final int MAX_SCHEDULE_STOPS = 5;
+    static final int MAX_SCHEDULE_STOPS = 20;
     private static final int SAVE_MAGIC = 0x4c4d5252;
     private static final int SAVE_VERSION = 2;
     private static final int MAX_SAVED_ENTRIES = 100_000;

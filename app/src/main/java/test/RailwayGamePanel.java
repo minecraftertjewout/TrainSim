@@ -145,6 +145,10 @@ final class RailwayGamePanel extends JPanel {
                     saveGame();
                     return;
                 }
+                if (event.isControlDown() && event.getKeyCode() == KeyEvent.VK_N) {
+                    confirmNewRailway();
+                    return;
+                }
                 if (event.isControlDown() && event.getKeyCode() == KeyEvent.VK_O) {
                     loadGame();
                     return;
@@ -169,6 +173,7 @@ final class RailwayGamePanel extends JPanel {
                         guideOpen = true;
                         guideTopic = GuideTopic.OVERVIEW;
                     }
+                    case KeyEvent.VK_F5 -> quickSave();
                     case KeyEvent.VK_SPACE -> running = !running;
                     case KeyEvent.VK_ESCAPE -> trackStart = null;
                     case KeyEvent.VK_BACK_SPACE, KeyEvent.VK_DELETE -> removeSelectedStop();
@@ -219,22 +224,23 @@ final class RailwayGamePanel extends JPanel {
             repaint();
             return;
         }
-        if (y < 79 && x >= 900 && x <= 982) {
-            guideOpen = true;
-            guideTopic = GuideTopic.OVERVIEW;
-            repaint();
-            return;
-        }
-        if (y < 79 && x >= 1000 && x <= 1164) {
-            if (x < 1082) {
+        if (y < 79 && x >= 878 && x <= 1236) {
+            if (x < 947) {
+                guideOpen = true;
+                guideTopic = GuideTopic.OVERVIEW;
+            } else if (x < 1015) {
+                confirmNewRailway();
+            } else if (x < 1083) {
                 saveGame();
-            } else {
+            } else if (x < 1151) {
                 loadGame();
+            } else {
+                quickSave();
             }
             return;
         }
-        if (y < 79 && x >= 1178) {
-            if (x >= 1320) {
+        if (y < 79 && x >= 1242) {
+            if (x >= 1326) {
                 fastForward = !fastForward;
             } else {
                 running = !running;
@@ -382,7 +388,7 @@ final class RailwayGamePanel extends JPanel {
                 } else if (selectedTrain.stops.contains(station.position)) {
                     announce(station.name + " is already on this timetable.");
                 } else {
-                    announce("This timetable has 5 stops. Remove one before adding another.");
+                    announce("This timetable has 20 stops. Remove one before adding another.");
                 }
             }
             case DEMOLISH -> announce(demolitionMessage(world.demolishAt(point, 28 / zoom)));
@@ -404,6 +410,47 @@ final class RailwayGamePanel extends JPanel {
             if (index >= 0 && index < GuideTopic.values().length) {
                 guideTopic = GuideTopic.values()[index];
             }
+        }
+    }
+
+    private void confirmNewRailway() {
+        boolean wasRunning = running;
+        running = false;
+        int result = JOptionPane.showConfirmDialog(this,
+                "Start a completely new railway? The previous save file will be kept, but unsaved changes will be lost.",
+                "New railway", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
+        running = wasRunning;
+        if (result == JOptionPane.OK_OPTION) {
+            startNewRailway();
+        }
+        repaint();
+    }
+
+    void startNewRailway() {
+        world = new RailwayWorld();
+        selectedTrain = world.trains.get(0);
+        selectedContract = world.contracts.get(0);
+        selectedStation = null;
+        tool = Tool.CURSOR;
+        selectedStopIndex = -1;
+        trackStart = null;
+        pointerWorld = null;
+        cameraX = 0;
+        cameraY = 0;
+        zoom = 0.62;
+        running = true;
+        fastForward = false;
+        guideOpen = false;
+        panning = false;
+        clearLastSavePath();
+        announce("New railway started. Save it as a new file when you are ready.");
+        repaint();
+    }
+
+    private void clearLastSavePath() {
+        try {
+            Preferences.userNodeForPackage(App.class).remove("lastSavePath");
+        } catch (SecurityException ignored) {
         }
     }
 
@@ -550,6 +597,31 @@ final class RailwayGamePanel extends JPanel {
             announce("Save failed: " + exception.getMessage());
         }
         repaint();
+    }
+
+    void quickSave() {
+        Path path = lastSavedPath();
+        if (path == null) {
+            saveGame();
+            return;
+        }
+        try {
+            world.save(path, currentViewState());
+            rememberLastSave(path);
+            announce("Quick-saved to " + path.getFileName() + ".");
+        } catch (IOException exception) {
+            announce("Quick save failed: " + exception.getMessage());
+        }
+        repaint();
+    }
+
+    private Path lastSavedPath() {
+        try {
+            String savedPath = Preferences.userNodeForPackage(App.class).get("lastSavePath", "");
+            return savedPath.isBlank() ? null : Path.of(savedPath);
+        } catch (IllegalArgumentException | SecurityException exception) {
+            return null;
+        }
     }
 
     private void loadGame() {
@@ -723,17 +795,21 @@ final class RailwayGamePanel extends JPanel {
         g.setFont(new Font("Dialog", Font.BOLD, 20));
         g.drawString(String.format("%02d", world.deliveries), 779, 55);
 
-        drawHeaderButton(g, 900, 21, 82, 40, "BOOK", false);
-        drawHeaderButton(g, 1004, 21, 76, 40, "SAVE", false);
-        drawHeaderButton(g, 1086, 21, 76, 40, "LOAD", false);
-        drawHeaderButton(g, 1190, 21, 99, 40, running ? "PAUSE" : "RESUME", running);
-        drawHeaderButton(g, 1300, 21, 72, 40, fastForward ? "3x" : "1x", fastForward);
+        drawHeaderButton(g, 878, 21, 68, 40, "BOOK", false);
+        drawHeaderButton(g, 950, 21, 64, 40, "NEW", false);
+        drawHeaderButton(g, 1018, 21, 64, 40, "SAVE", false);
+        drawHeaderButton(g, 1086, 21, 64, 40, "LOAD", false);
+        drawHeaderButton(g, 1154, 21, 82, 40, "QUICK SAVE", false);
+        drawHeaderButton(g, 1242, 21, 78, 40, running ? "PAUSE" : "RESUME", running);
+        drawHeaderButton(g, 1326, 21, 54, 40, fastForward ? "3x" : "1x", fastForward);
         g.setColor(new Color(166, 202, 221));
         g.setFont(new Font("Dialog", Font.PLAIN, 10));
-        g.drawString("F1", 931, 73);
-        g.drawString("CTRL+S", 1022, 73);
-        g.drawString("CTRL+O", 1104, 73);
-        g.drawString("SPACE  PAUSE", 1191, 73);
+        g.drawString("F1", 904, 73);
+        g.drawString("CTRL+N", 963, 73);
+        g.drawString("CTRL+S", 1025, 73);
+        g.drawString("CTRL+O", 1093, 73);
+        g.drawString("F5", 1187, 73);
+        g.drawString("SPACE", 1264, 73);
     }
 
     private void drawTools(Graphics2D g) {
@@ -1551,7 +1627,7 @@ final class RailwayGamePanel extends JPanel {
             "Choose Buy locomotive and click near a rail. A train starts with two carriages and carries four crates per carriage.\n\n"
             + "Use + CAR in its details to add capacity for $85, up to ten carriages. Click a locomotive on the map or in the roster to select it."),
         TIMETABLE("Timetables", "Choose and order station stops",
-            "Select Set timetable, then click stations on the map to add them to the selected train's route. A timetable can have up to five stops.\n\n"
+                "Select Set timetable, then click stations on the map to add them to the selected train's route. A timetable can have up to 20 stops.\n\n"
             + "Use the row arrows to reorder stops and x to remove one. Repeat toggles between a continuous circuit and a one-shot route. Changes do not interrupt the current leg."),
         FREIGHT("Freight contracts", "Turn deliveries into company funds",
             "Click an available order on the Freight Board to accept it. Check its goods, origin, destination, crate count, reward, and deadline.\n\n"
@@ -1567,7 +1643,7 @@ final class RailwayGamePanel extends JPanel {
             + "A save includes your map, stations, stock, contracts, schedules, train positions, cargo, and current view. Loading asks before replacing the current railway."),
         MAP("Map & controls", "Navigate the map and operate the clock",
             "Scroll over the map or use its +/− buttons to zoom. Right-drag to pan. The map stays proportional when the window is resized.\n\n"
-                + "Press 1 for Cursor and 2–7 for railway tools, Space to pause or resume, and F1 to open this guide. Press Escape to close the guide or finish drawing track.");
+            + "Press 1 for Cursor and 2–7 for railway tools, Ctrl+N to start a fresh railway, Space to pause or resume, and F1 to open this guide. Press Escape to close the guide or finish drawing track.");
 
         final String label;
         final String title;

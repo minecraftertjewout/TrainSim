@@ -14,7 +14,7 @@ The game starts with a regional railway, the Juniper locomotive, and a timber sh
 4. Let the train collect the crates and deliver them before the deadline.
 5. Use the payout to expand your railway.
 
-Stations produce their listed goods over time. Trains load accepted orders automatically when they stop at the origin, and unload them at the destination. Each carriage holds four crates. Timetables can have up to five stops and can repeat or run once.
+Stations produce their listed goods over time. Trains load accepted orders automatically when they stop at the origin, and unload them at the destination. Each carriage holds four crates. Timetables can have up to 20 stops and can repeat or run once.
 
 ## Railway Tools
 
@@ -46,6 +46,7 @@ Removal is blocked when it would disrupt active gameplay: trains carrying freigh
 | Click a timetable row, then `Up` / `Down` | Move the selected stop |
 | `Backspace` or `Delete` | Remove the selected timetable stop |
 | `F1` or **Book** | Open the in-game guide |
+| **New** or `Ctrl+N` | Start a fresh railway after confirmation; the previous save file is kept |
 | `Ctrl+S` or **Save** | Save the railway to an `.lmsave` file |
 | `Ctrl+O` or **Load** | Load a saved railway |
 

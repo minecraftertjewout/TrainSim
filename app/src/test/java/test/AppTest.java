@@ -6,6 +6,7 @@ package test;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.awt.event.MouseEvent;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.prefs.Preferences;
 import org.junit.jupiter.api.Test;
@@ -302,6 +303,61 @@ class AppTest {
             assertEquals(savedWorld.cash, game.world.cash);
             assertEquals(savedWorld.tracks, game.world.tracks);
             assertEquals(RailwayGamePanel.Tool.CURSOR, game.currentTool());
+        } finally {
+            if (previousPath == null) {
+                preferences.remove("lastSavePath");
+            } else {
+                preferences.put("lastSavePath", previousPath);
+            }
+            preferences.flush();
+        }
+    }
+
+    @Test void quickSaveButtonUpdatesTheRememberedSave(@TempDir Path tempDirectory)
+            throws java.io.IOException, java.util.prefs.BackingStoreException {
+        Preferences preferences = Preferences.userNodeForPackage(App.class);
+        String previousPath = preferences.get("lastSavePath", null);
+        Path savePath = tempDirectory.resolve("quick-save.lmsave");
+        try {
+            RailwayGamePanel game = new App().createGamePanel();
+            game.setSize(1440, 900);
+            game.world.cash += 321;
+            preferences.put("lastSavePath", savePath.toString());
+
+            click(game, 1174, 40);
+
+            RailwayWorld.LoadedGame saved = RailwayWorld.load(savePath);
+            assertEquals(game.world.cash, saved.world().cash);
+        } finally {
+            if (previousPath == null) {
+                preferences.remove("lastSavePath");
+            } else {
+                preferences.put("lastSavePath", previousPath);
+            }
+            preferences.flush();
+        }
+    }
+
+    @Test void newRailwayResetsTheSessionWithoutDeletingPreviousSave(@TempDir Path tempDirectory)
+            throws java.io.IOException, java.util.prefs.BackingStoreException {
+        Preferences preferences = Preferences.userNodeForPackage(App.class);
+        String previousPath = preferences.get("lastSavePath", null);
+        Path oldSave = tempDirectory.resolve("previous.lmsave");
+        Files.writeString(oldSave, "existing save");
+        try {
+            preferences.put("lastSavePath", oldSave.toString());
+            RailwayGamePanel game = new App().createGamePanel();
+            game.world.cash = 1;
+
+            game.startNewRailway();
+
+            assertEquals(1450, game.world.cash);
+            assertEquals(8, game.world.tracks.size());
+            assertEquals(5, game.world.stations.size());
+            assertEquals(1, game.world.trains.size());
+            assertEquals(RailwayGamePanel.Tool.CURSOR, game.currentTool());
+            assertEquals("", preferences.get("lastSavePath", ""));
+            assertTrue(Files.exists(oldSave));
         } finally {
             if (previousPath == null) {
                 preferences.remove("lastSavePath");
