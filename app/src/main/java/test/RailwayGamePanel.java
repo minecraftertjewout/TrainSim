@@ -38,6 +38,10 @@ final class RailwayGamePanel extends JPanel {
     private static final int MAP_H = 610;
     private static final int BOARD_X = 1184;
     private static final int BOARD_W = 242;
+    private static final int SCHEDULE_ROW_TOP = 584;
+    private static final int SCHEDULE_ROW_HEIGHT = 21;
+    private static final int SCHEDULE_VISIBLE_ROWS = 5;
+    private static final int SCHEDULE_SCROLL_HEIGHT = SCHEDULE_ROW_HEIGHT * SCHEDULE_VISIBLE_ROWS;
 
     private static final Color NIGHT = new Color(25, 40, 59);
     private static final Color NIGHT_LIGHT = new Color(38, 67, 91);
@@ -64,6 +68,8 @@ final class RailwayGamePanel extends JPanel {
     private boolean running = true;
     private boolean fastForward;
     private boolean panning;
+    private boolean draggingScheduleScrollbar;
+    private int scheduleScrollOffset;
     private int lastPanX;
     private int lastPanY;
     private String message = "Select an item with the cursor, or choose a railway tool to begin building.";
@@ -97,6 +103,7 @@ final class RailwayGamePanel extends JPanel {
             @Override
             public void mouseReleased(MouseEvent event) {
                 panning = false;
+                draggingScheduleScrollbar = false;
             }
         });
         addMouseMotionListener(new MouseAdapter() {
@@ -112,7 +119,11 @@ final class RailwayGamePanel extends JPanel {
 
             @Override
             public void mouseDragged(MouseEvent event) {
-                if (panning) {
+                if (draggingScheduleScrollbar) {
+                    Point logical = logicalPoint(event.getX(), event.getY());
+                    setScheduleScrollFromY(logical.y);
+                    repaint();
+                } else if (panning) {
                     double scale = interfaceScale();
                     cameraX -= (event.getX() - lastPanX) / (scale * zoom);
                     cameraY -= (event.getY() - lastPanY) / (scale * zoom);
@@ -133,6 +144,11 @@ final class RailwayGamePanel extends JPanel {
                 return;
             }
             Point logical = logicalPoint(event.getX(), event.getY());
+            if (insideScheduleViewport(logical.x, logical.y)) {
+                scrollSchedule(event.getWheelRotation());
+                repaint();
+                return;
+            }
             if (insideMap(logical.x, logical.y)) {
                 zoomAt(logical.x, logical.y, event.getWheelRotation() < 0 ? 1.14 : 1 / 1.14);
                 repaint();
@@ -214,6 +230,50 @@ final class RailwayGamePanel extends JPanel {
         return x >= MAP_X && x <= MAP_X + MAP_W && y >= MAP_Y && y <= MAP_Y + MAP_H;
     }
 
+    private boolean insideScheduleViewport(int x, int y) {
+        return selectedTrain != null && x >= 20 && x <= 228
+                && y >= SCHEDULE_ROW_TOP && y < SCHEDULE_ROW_TOP + SCHEDULE_SCROLL_HEIGHT;
+    }
+
+    private int maxScheduleScroll() {
+        return selectedTrain == null ? 0
+                : Math.max(0, selectedTrain.stops.size() - SCHEDULE_VISIBLE_ROWS);
+    }
+
+    int firstVisibleScheduleStop() {
+        return scheduleScrollOffset;
+    }
+
+    private void scrollSchedule(int amount) {
+        scheduleScrollOffset = Math.max(0, Math.min(maxScheduleScroll(), scheduleScrollOffset + amount));
+    }
+
+    private void setScheduleScrollFromY(int y) {
+        int stopCount = selectedTrain == null ? 0 : selectedTrain.stops.size();
+        int thumbHeight = Math.max(18, SCHEDULE_SCROLL_HEIGHT * SCHEDULE_VISIBLE_ROWS
+                / Math.max(SCHEDULE_VISIBLE_ROWS, stopCount));
+        int availableTravel = SCHEDULE_SCROLL_HEIGHT - thumbHeight;
+        if (availableTravel <= 0) {
+            scheduleScrollOffset = 0;
+            return;
+        }
+        double fraction = (y - SCHEDULE_ROW_TOP - thumbHeight / 2.0) / availableTravel;
+        fraction = Math.max(0, Math.min(1, fraction));
+        scheduleScrollOffset = (int) Math.round(fraction * maxScheduleScroll());
+    }
+
+    private void keepSelectedStopVisible() {
+        if (selectedStopIndex < 0) {
+            return;
+        }
+        if (selectedStopIndex < scheduleScrollOffset) {
+            scheduleScrollOffset = selectedStopIndex;
+        } else if (selectedStopIndex >= scheduleScrollOffset + SCHEDULE_VISIBLE_ROWS) {
+            scheduleScrollOffset = selectedStopIndex - SCHEDULE_VISIBLE_ROWS + 1;
+        }
+        scheduleScrollOffset = Math.max(0, Math.min(maxScheduleScroll(), scheduleScrollOffset));
+    }
+
     Tool currentTool() {
         return tool;
     }
@@ -258,8 +318,16 @@ final class RailwayGamePanel extends JPanel {
                     return;
                 }
             }
-            if (selectedTrain != null && y >= 584 && y < 689) {
-                int index = (y - 584) / 21;
+            if (selectedTrain != null && y >= SCHEDULE_ROW_TOP
+                    && y < SCHEDULE_ROW_TOP + SCHEDULE_SCROLL_HEIGHT) {
+                if (x >= 212 && x <= 230) {
+                    draggingScheduleScrollbar = true;
+                    setScheduleScrollFromY(y);
+                    repaint();
+                    return;
+                }
+                int visibleRow = (y - SCHEDULE_ROW_TOP) / SCHEDULE_ROW_HEIGHT;
+                int index = scheduleScrollOffset + visibleRow;
                 if (index >= 0 && index < selectedTrain.stops.size()) {
                     selectedStopIndex = index;
                     if (x < 144) {
@@ -314,6 +382,7 @@ final class RailwayGamePanel extends JPanel {
                 if (index >= 0 && index < world.trains.size()) {
                     selectedTrain = world.trains.get(index);
                     selectedStopIndex = -1;
+                    scheduleScrollOffset = 0;
                     announce(selectedTrain.name + " selected. Set its stops with the timetable tool.");
                 }
             }
@@ -334,6 +403,7 @@ final class RailwayGamePanel extends JPanel {
             if (result == RailwayWorld.DemolitionResult.TRAIN_REMOVED && selectedTrain == clickedTrain) {
                 selectedTrain = world.trains.get(0);
                 selectedStopIndex = -1;
+                scheduleScrollOffset = 0;
             }
             repaint();
             return;
@@ -342,6 +412,7 @@ final class RailwayGamePanel extends JPanel {
             selectedTrain = clickedTrain;
             selectedStation = null;
             selectedStopIndex = -1;
+            scheduleScrollOffset = 0;
             announce(selectedTrain.name + " selected.");
             repaint();
             return;
@@ -373,6 +444,7 @@ final class RailwayGamePanel extends JPanel {
                 } else {
                     selectedTrain = train;
                     selectedStopIndex = -1;
+                    scheduleScrollOffset = 0;
                     announce(train.name + " deployed. Select Timetable and add station stops.");
                 }
             }
@@ -384,6 +456,7 @@ final class RailwayGamePanel extends JPanel {
                     announce("Select a train before adding timetable stops.");
                 } else if (world.addScheduleStop(selectedTrain, station)) {
                     selectedStopIndex = selectedTrain.stops.size() - 1;
+                    keepSelectedStopVisible();
                     announce(station.name + " added to " + selectedTrain.name + "'s timetable.");
                 } else if (selectedTrain.stops.contains(station.position)) {
                     announce(station.name + " is already on this timetable.");
@@ -433,6 +506,7 @@ final class RailwayGamePanel extends JPanel {
         selectedStation = null;
         tool = Tool.CURSOR;
         selectedStopIndex = -1;
+        scheduleScrollOffset = 0;
         trackStart = null;
         pointerWorld = null;
         cameraX = 0;
@@ -461,6 +535,7 @@ final class RailwayGamePanel extends JPanel {
             return;
         }
         selectedStopIndex += direction;
+        keepSelectedStopVisible();
         announce("Stop order updated. The train will finish its current leg first.");
     }
 
@@ -476,6 +551,8 @@ final class RailwayGamePanel extends JPanel {
             return;
         }
         selectedStopIndex = Math.min(selectedStopIndex, selectedTrain.stops.size() - 1);
+        scheduleScrollOffset = Math.max(0, Math.min(maxScheduleScroll(), scheduleScrollOffset));
+        keepSelectedStopVisible();
         announce("Stop removed from " + selectedTrain.name + "'s timetable.");
     }
 
@@ -684,6 +761,7 @@ final class RailwayGamePanel extends JPanel {
             running = view.running();
             fastForward = view.fastForward();
             selectedStopIndex = -1;
+            scheduleScrollOffset = 0;
             trackStart = null;
             pointerWorld = null;
             tool = Tool.CURSOR;
@@ -901,9 +979,11 @@ final class RailwayGamePanel extends JPanel {
         if (selectedTrain.stops.isEmpty()) {
             g.drawString("Choose Set timetable, then click stations.", x + 14, y + 177);
         } else {
-            for (int index = 0; index < selectedTrain.stops.size(); index++) {
+            int visibleRows = Math.min(SCHEDULE_VISIBLE_ROWS, selectedTrain.stops.size());
+            for (int visibleRow = 0; visibleRow < visibleRows; visibleRow++) {
+                int index = scheduleScrollOffset + visibleRow;
                 RailwayWorld.Station station = world.stationAt(selectedTrain.stops.get(index));
-                int rowY = y + 158 + index * 21;
+                int rowY = y + 158 + visibleRow * SCHEDULE_ROW_HEIGHT;
                 if (index == selectedStopIndex) {
                     g.setColor(new Color(220, 239, 249));
                     g.fillRoundRect(x + 8, rowY, 202, 20, 4, 4);
@@ -922,6 +1002,19 @@ final class RailwayGamePanel extends JPanel {
                 drawScheduleAction(g, x + 132, rowY + 1, "^");
                 drawScheduleAction(g, x + 154, rowY + 1, "v");
                 drawScheduleAction(g, x + 176, rowY + 1, "x");
+            }
+            if (selectedTrain.stops.size() > SCHEDULE_VISIBLE_ROWS) {
+                int scrollbarX = x + 203;
+                int scrollbarY = y + 158;
+                int thumbHeight = Math.max(18, SCHEDULE_SCROLL_HEIGHT * SCHEDULE_VISIBLE_ROWS
+                        / selectedTrain.stops.size());
+                int thumbTravel = SCHEDULE_SCROLL_HEIGHT - thumbHeight;
+                int thumbY = scrollbarY + (maxScheduleScroll() == 0 ? 0
+                        : thumbTravel * scheduleScrollOffset / maxScheduleScroll());
+                g.setColor(new Color(221, 238, 248));
+                g.fillRoundRect(scrollbarX, scrollbarY, 6, SCHEDULE_SCROLL_HEIGHT, 3, 3);
+                g.setColor(BLUE);
+                g.fillRoundRect(scrollbarX, thumbY, 6, thumbHeight, 3, 3);
             }
         }
 
@@ -1628,7 +1721,7 @@ final class RailwayGamePanel extends JPanel {
             + "Use + CAR in its details to add capacity for $85, up to ten carriages. Click a locomotive on the map or in the roster to select it."),
         TIMETABLE("Timetables", "Choose and order station stops",
                 "Select Set timetable, then click stations on the map to add them to the selected train's route. A timetable can have up to 20 stops.\n\n"
-            + "Use the row arrows to reorder stops and x to remove one. Repeat toggles between a continuous circuit and a one-shot route. Changes do not interrupt the current leg."),
+            + "Five stops are visible at a time; scroll over the list or drag its scrollbar to see the rest. Use the row arrows to reorder stops and x to remove one. Repeat toggles between a continuous circuit and a one-shot route. Changes do not interrupt the current leg."),
         FREIGHT("Freight contracts", "Turn deliveries into company funds",
             "Click an available order on the Freight Board to accept it. Check its goods, origin, destination, crate count, reward, and deadline.\n\n"
             + "Schedule a train to visit both ends. The origin must have stock and the train needs enough free capacity. Orders pay when every crate is delivered; missed deadlines expire."),

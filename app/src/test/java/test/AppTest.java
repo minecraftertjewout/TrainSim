@@ -6,6 +6,7 @@ package test;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.awt.event.MouseEvent;
+import java.awt.event.MouseWheelEvent;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.prefs.Preferences;
@@ -132,6 +133,36 @@ class AppTest {
 
         assertEquals(20, train.stops.size());
         assertFalse(world.addScheduleStop(train, world.stations.get(world.stations.size() - 1)));
+    }
+
+    @Test void timetableScrollRevealsAndEditsOffscreenStops() {
+        RailwayGamePanel game = new App().createGamePanel();
+        game.setSize(1440, 900);
+        game.world.cash = 100_000;
+        for (int index = 0; index < 16; index++) {
+            assertNotNull(game.world.buildStation(new RailwayWorld.Node(1600 + index * 55, 1500)));
+        }
+        RailwayWorld.Train train = game.world.trains.get(0);
+        for (RailwayWorld.Station station : game.world.stations) {
+            if (!train.stops.contains(station.position)
+                    && train.stops.size() < RailwayWorld.MAX_SCHEDULE_STOPS) {
+                assertTrue(game.world.addScheduleStop(train, station));
+            }
+        }
+        assertEquals(20, train.stops.size());
+        RailwayWorld.Node stopToRemove = train.stops.get(2);
+
+        MouseWheelEvent scroll = new MouseWheelEvent(game, MouseEvent.MOUSE_WHEEL,
+                System.currentTimeMillis(), 0, 220, 625, 0, false,
+                MouseWheelEvent.WHEEL_UNIT_SCROLL, 1, 2);
+        for (var listener : game.getMouseWheelListeners()) {
+            listener.mouseWheelMoved(scroll);
+        }
+
+        assertEquals(2, game.firstVisibleScheduleStop());
+        click(game, 197, 594);
+        assertEquals(19, train.stops.size());
+        assertFalse(train.stops.contains(stopToRemove));
     }
 
     @Test void scheduledFreightDeliveryPaysItsContract() {
